@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rutas</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f0f2f5;
+            font-family: 'Roboto', sans-serif;
+            color: #333333;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            margin-top: 20px;
+        }
+        .form-section {
+            margin-bottom: 20px;
+            position: relative;
+        }
+        .map-section {
+            flex: 1;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 20px;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            background-color: #ffffff;
+            margin-bottom: 20px;
+        }
+        .btn-custom {
+            border-radius: 30px;
+            padding: 10px 20px;
+            font-size: 16px;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center; /* Center the button content */
+            margin: 0 auto; /* Center the button horizontally */
+        }
+        .btn-primary-custom {
+            background-color: #3b5998;
+            border: none;
+        }
+        .btn-primary-custom:hover {
+            background-color: #2d4373;
+        }
+        .btn-danger-custom {
+            background-color: #ff5a5f;
+            border: none;
+        }
+        .btn-danger-custom:hover {
+            background-color: #e14e54;
+        }
+        h1, h2 {
+            font-weight: 300;
+        }
+        .lead {
+            color: #666666;
+        }
+        #map {
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            height: 500px;
+            width: 100%;
+        }
+        .form-group.hidden {
+            display: none;
+        }
+        .poi-buttons {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .poi-buttons button {
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            margin: 5px;
+        }
+        .poi-buttons button img {
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+        }
+        .poi-buttons button:hover {
+            background-color: #f0f0f0;
+        }
+        #route-results {
+            display: none;
+        }
+    </style>
+    <script>
+        let map, directionsService, directionsRenderer, trafficLayer, watchId, currentMarker, originMarker, destinationMarker, service, locationMarker, currentLocation;
+        let poiMarkers = [];
+        let routeMarkers = [];
+
+        function initMap() {
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: true });
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 7,
+                center: { lat: 19.432608, lng: -99.133209 }
+            });
+
+            trafficLayer = new google.maps.TrafficLayer();
+            trafficLayer.setMap(map);
+
+            directionsRenderer.setMap(map);
+
+            service = new google.maps.places.PlacesService(map);
+
+            markCurrentLocation();
+        }
+
+        function markCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    currentLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+
+                    if (locationMarker) {
+                        locationMarker.setMap(null);
+                    }
+
+                    locationMarker = new google.maps.Marker({
+                        position: currentLocation,
+                        map: map,
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE,
+                            scale: 8,
+                            fillColor: '#4285F4',
+                            fillOpacity: 1,
+                            strokeWeight: 0
+                        }
+                    });
+
+                    const circle = new google.maps.Circle({
+                        map: map,
+                        center: currentLocation,
+                        radius: 100,
+                        strokeColor: '#4285F4',
+                        strokeOpacity: 0.8,
+                        strokeWeight: 2,
+                        fillColor: '#4285F4',
+                        fillOpacity: 0.35
+                    });
+
+                    map.setCenter(currentLocation);
+                }, function() {
+                    alert("Error: The Geolocation service failed.");
+                });
+            } else {
+                alert("Error: Your browser doesn't support geolocation.");
+            }
+        }
+
+        function startNavigation() {
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(updatePosition, showError, { enableHighAccuracy: true });
+            } else {
+                alert("Geolocation is not supported by this browser.");
+            }
+        }
+
+        function updatePosition(position) {
+            const currentLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+            if (currentMarker) {
+                currentMarker.setPosition(currentLocation);
+            } else {
+                currentMarker = new google.maps.Marker({
+                    position: currentLocation,
+                    map: map,
+                    icon: {
+                        url: "/static/waze.png",
+                        scaledSize: new google.maps.Size(50, 50)
+                    }
+                });
+            }
+            map.setCenter(currentLocation);
+        }
+
+        function showError(error) {
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    alert("User denied the request for Geolocation.");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    alert("Location information is unavailable.");
+                    break;
+                case error.TIMEOUT:
+                    alert("The request to get user location timed out.");
+                    break;
+                case error.UNKNOWN_ERROR:
+                    alert("An unknown error occurred.");
+                    break;
+            }
+        }
+
+        function stopNavigation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.clearWatch(watchId);
+                if (currentMarker) {
+                    currentMarker.setMap(null);
+                    currentMarker = null;
+                }
+            }
+        }
+
+        function autoFillLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const geocoder = new google.maps.Geocoder();
+
+                    const latlng = {
+                        lat: parseFloat(lat),
+                        lng: parseFloat(lng)
+                    };
+
+                    geocoder.geocode({ 'location': latlng }, function(results, status) {
+                        if (status === 'OK') {
+                            if (results[0]) {
+                                document.getElementById('origen').value = results[0].formatted_address;
+                            } else {
+                                window.alert('No results found');
+                            }
+                        } else {
+                            window.alert('Geocoder failed due to: ' + status);
+                        }
+                    });
+                }, function() {
+                    alert("Error: The Geolocation service failed.");
+                });
+            } else {
+                alert("Error: Your browser doesn't support geolocation.");
+            }
+        }
+
+        function calculateRoute(event) {
+            event.preventDefault();
+
+            const origin = document.getElementById('origen').value;
+            const destination = document.getElementById('destino').value;
+            const stops = document.getElementById('paradas').value.split(',').map(stop => stop.trim()).filter(stop => stop !== '');
+
+            const waypts = stops.map(stop => ({
+                location: stop,
+                stopover: true
+            }));
+
+            directionsService.route({
+                origin: origin,
+                destination: destination,
+                waypoints: waypts,
+                travelMode: 'DRIVING'
+            }, (response, status) => {
+                if (status === 'OK') {
+                    directionsRenderer.setDirections(response);
+
+                    clearRouteMarkers();
+
+                    // Marker for origin with label A
+                    originMarker = new google.maps.Marker({
+                        position: response.routes[0].legs[0].start_location,
+                        map: map,
+                        label: 'A',
+                        icon: {
+                            url: "/static/waze.png",
+                            scaledSize: new google.maps.Size(50, 50)
+                        },
+                        title: "Origen"
+                    });
+                    routeMarkers.push(originMarker);
+
+                    const labels = 'BCDEFGHIJKLMNOPQRSTUVWXYZ';
+                    response.routes[0].legs.forEach((leg, index) => {
+                        let labelIndex = index + 1;
+                        let marker = new google.maps.Marker({
+                            position: leg.end_location,
+                            label: labels[labelIndex - 1],
+                            map: map,
+                            title: `Parada ${labels[labelIndex - 1]}`
+                        });
+                        routeMarkers.push(marker);
+                    });
+
+                    const totalDistance = (response.routes[0].legs.reduce((sum, leg) => sum + leg.distance.value, 0) / 1000).toFixed(2);
+                    const totalFuelConsumption = (totalDistance / 12).toFixed(2);
+                    const totalDurationSeconds = response.routes[0].legs.reduce((sum, leg) => sum + leg.duration.value, 0);
+                    const hours = Math.floor(totalDurationSeconds / 3600);
+                    const minutes = Math.floor((totalDurationSeconds % 3600) / 60);
+
+                    let durationText = '';
+                    if (hours > 0) {
+                        durationText += `${hours} horas `;
+                    }
+                    if (minutes > 0) {
+                        durationText += `${minutes} minutos`;
+                    }
+
+                    const arrivalTime = new Date(Date.now() + totalDurationSeconds * 1000).toLocaleTimeString();
+
+                    let tolls = 0;
+                    response.routes[0].legs.forEach(leg => {
+                        leg.steps.forEach(step => {
+                            if (step.instructions.includes("toll") || step.instructions.includes("peaje")) {
+                                tolls++;
+                            }
+                        });
+                    });
+
+                    document.getElementById('distancia_total_gmaps').innerText = `${totalDistance} km`;
+                    document.getElementById('consumo_combustible_gmaps').innerText = `${totalFuelConsumption} litros`;
+                    document.getElementById('duracion_total').innerText = durationText;
+                    document.getElementById('llegada_estimada').innerText = arrivalTime;
+                    document.getElementById('total_peajes').innerText = `${tolls} peajes`;
+
+                    document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+
+                    clearPOIMarkers();
+
+                    document.getElementById('route-results').style.display = 'block';
+                } else {
+                    window.alert('Directions request failed due to ' + status);
+                }
+            });
+        }
+
+        function showForm() {
+            document.getElementById('form-fields').style.display = 'block';
+            document.addEventListener('click', hideFormOnClickOutside);
+        }
+
+        function hideFormOnClickOutside(event) {
+            const form = document.getElementById('routeForm');
+            if (!form.contains(event.target)) {
+                document.getElementById('form-fields').style.display = 'none';
+                document.removeEventListener('click', hideFormOnClickOutside);
+            }
+        }
+
+        function searchPOI(type) {
+            clearPOIMarkers();
+            directionsRenderer.set('directions', null);
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    const currentLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+
+                    const request = {
+                        location: currentLocation,
+                        radius: '5000',
+                        type: [type]
+                    };
+
+                    service.nearbySearch(request, function(results, status) {
+                        if (status === google.maps.places.PlacesServiceStatus.OK) {
+                            for (let i = 0; i < results.length; i++) {
+                                createPOIMarker(results[i]);
+                            }
+                            map.setCenter(currentLocation);
+                            map.setZoom(12);
+                        }
+                    });
+                }, function() {
+                    alert("Error: The Geolocation service failed.");
+                });
+            } else {
+                alert("Error: Your browser doesn't support geolocation.");
+            }
+        }
+
+        function createPOIMarker(place) {
+            const marker = new google.maps.Marker({
+                map: map,
+                position: place.geometry.location,
+                icon: {
+                    url: place.icon,
+                    scaledSize: new google.maps.Size(30, 30)
+                }
+            });
+
+            google.maps.event.addListener(marker, 'click', function() {
+                const origin = currentLocation ? currentLocation : map.getCenter();
+                const destination = place.geometry.location;
+
+                directionsService.route({
+                    origin: origin,
+                    destination: destination,
+                    travelMode: 'DRIVING'
+                }, function(response, status) {
+                    if (status === 'OK') {
+                        directionsRenderer.setDirections(response);
+                        document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+                    } else {
+                        window.alert('Directions request failed due to ' + status);
+                    }
+                });
+            });
+
+            poiMarkers.push(marker);
+        }
+
+        function clearPOIMarkers() {
+            for (let i = 0; i < poiMarkers.length; i++) {
+                poiMarkers[i].setMap(null);
+            }
+            poiMarkers = [];
+        }
+
+        function clearRouteMarkers() {
+            for (let i = 0; i < routeMarkers.length; i++) {
+                routeMarkers[i].setMap(null);
+            }
+            routeMarkers = [];
+        }
+
+        window.onload = autoFillLocation;
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCp-9uuzH1C7BVWpq09YDfrd89K_cGjL1Q&callback=initMap&libraries=places"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="text-center">
+            <h1>Rutas</h1>
+        </div>
+        <div class="form-section">
+            <div class="card p-4">
+                <form id="routeForm">
+                    <div class="form-group">
+                        <label for="origen">¿Adónde quieres ir?</label>
+                        <input type="text" class="form-control" id="origen" name="origen" placeholder="Ingrese el punto de origen" onclick="showForm()" required>
+                    </div>
+                    <div id="form-fields" style="display:none;">
+                        <div class="form-group">
+                            <label for="destino">Destino:</label>
+                            <input type="text" class="form-control" id="destino" name="destino" placeholder="Ingrese el punto de destino" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="paradas">Paradas (separadas por comas):</label>
+                            <input type="text" class="form-control" id="paradas" name="paradas" placeholder="Ingrese las paradas intermedias">
+                        </div>
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary-custom btn-custom">
+                                <img src="/static/waze.png" alt="Ir" style="width: 20px; height: 20px; margin-right: 5px;">
+                                Calcular
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                <div class="poi-buttons">
+                    <button onclick="searchPOI('restaurant')">
+                        <img src="/static/restaurant.png" alt="Restaurantes"> Restaurantes
+                    </button>
+                    <button onclick="searchPOI('gas_station')">
+                        <img src="/static/gasolinera.png" alt="Gasolineras"> Gasolineras
+                    </button>
+                    <button onclick="searchPOI('lodging')">
+                        <img src="/static/hotel.png" alt="Hoteles"> Hoteles
+                    </button>
+                    <button onclick="searchPOI('supermarket')">
+                        <img src="/static/supermercado.png" alt="Supermercados"> Supermercados
+                    </button>
+                    <button onclick="searchPOI('convenience_store')">
+                        <img src="/static/minimercado.png" alt="Minimercados"> Minimercados
+                    </button>
+                    <button onclick="searchPOI('shopping_mall')">
+                        <img src="/static/compras.png" alt="Compras"> Compras
+                    </button>
+                    <button onclick="searchPOI('park')">
+                        <img src="/static/parque.png" alt="Parques"> Parques
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="map-section">
+            <div id="map"></div>
+        </div>
+        <div id="route-results" class="text-center mt-4">
+            <h1>Resultado de la Ruta</h1>
+            <p class="lead">Aquí están los detalles de tu ruta</p>
+            <div class="card p-4">
+                <div class="card-body">
+                    <p>Distancia Total (Google Maps): <strong id="distancia_total_gmaps"></strong></p>
+                    <p>Consumo de Combustible Estimado (Google Maps): <strong id="consumo_combustible_gmaps"></strong></p>
+                    <p>Duración Estimada del Viaje: <strong id="duracion_total"></strong></p>
+                    <p>Hora Estimada de Llegada: <strong id="llegada_estimada"></strong></p>
+                    <p>Total de Peajes: <strong id="total_peajes"></strong></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        document.getElementById('routeForm').addEventListener('submit', calculateRoute);
+    </script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora y Resultado de la Ruta</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f0f2f5;
+            font-family: 'Roboto', sans-serif;
+            color: #333333;
+        }
+        .container {
+            margin-top: 50px;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            background-color: #ffffff;
+            margin-bottom: 30px;
+        }
+        .btn-custom {
+            border-radius: 30px;
+            padding: 10px 20px;
+            font-size: 16px;
+            color: #ffffff;
+        }
+        .btn-primary-custom {
+            background-color: #3b5998;
+            border: none;
+        }
+        .btn-primary-custom:hover {
+            background-color: #2d4373;
+        }
+        .btn-danger-custom {
+            background-color: #ff5a5f;
+            border: none;
+        }
+        .btn-danger-custom:hover {
+            background-color: #e14e54;
+        }
+        h1, h2 {
+            font-weight: 300;
+        }
+        .lead {
+            color: #666666;
+        }
+        #map {
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            height: 600px;
+            width: 100%;
+        }
+        .text-center h1 {
+            color: #3b5998;
+        }
+        .card-body p {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        .form-group label {
+            font-weight: 500;
+            color: #333333;
+        }
+        .form-control {
+            border-radius: 10px;
+        }
+    </style>
+    <script>
+        let map, directionsService, directionsRenderer, trafficLayer, watchId, currentMarker;
+
+        function initMap() {
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 7,
+                center: { lat: 19.432608, lng: -99.133209 }
+            });
+
+            trafficLayer = new google.maps.TrafficLayer();
+            trafficLayer.setMap(map);
+
+            directionsRenderer.setMap(map);
+
+            const rutaData = '{{ ruta_gmaps | tojson | safe }}';
+            const waypointsData = '{{ waypoints | tojson | safe }}';
+
+            if (rutaData && waypointsData) {
+                const ruta = JSON.parse(rutaData);
+                const waypoints = JSON.parse(waypointsData);
+
+                const processedWaypoints = waypoints.map(location => ({
+                    location: location,
+                    stopover: true
+                }));
+
+                // Marcador para el origen
+                new google.maps.Marker({
+                    position: { lat: ruta[0].legs[0].start_location.lat, lng: ruta[0].legs[0].start_location.lng },
+                    label: "O",
+                    map: map,
+                    title: "Origen"
+                });
+
+                // Marcador para el destino
+                new google.maps.Marker({
+                    position: { lat: ruta[0].legs[ruta[0].legs.length - 1].end_location.lat, lng: ruta[0].legs[ruta[0].legs.length - 1].end_location.lng },
+                    label: "D",
+                    map: map,
+                    title: "Destino"
+                });
+
+                waypoints.forEach((location, index) => {
+                    new google.maps.Marker({
+                        position: location,
+                        label: `${index + 1}`,
+                        map: map,
+                        title: `Parada ${index + 1}`
+                    });
+                });
+
+                directionsService.route({
+                    origin: { lat: ruta[0].legs[0].start_location.lat, lng: ruta[0].legs[0].start_location.lng },
+                    destination: { lat: ruta[0].legs[ruta[0].legs.length - 1].end_location.lat, lng: ruta[0].legs[ruta[0].legs.length - 1].end_location.lng },
+                    waypoints: processedWaypoints,
+                    travelMode: 'DRIVING'
+                }, (response, status) => {
+                    if (status === 'OK') {
+                        directionsRenderer.setDirections(response);
+                    } else {
+                        window.alert('Directions request failed due to ' + status);
+                    }
+                });
+            }
+        }
+
+        function startNavigation() {
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(updatePosition, showError, { enableHighAccuracy: true });
+            } else {
+                alert("Geolocation is not supported by this browser.");
+            }
+        }
+
+        function updatePosition(position) {
+            const currentLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+            if (currentMarker) {
+                currentMarker.setPosition(currentLocation);
+            } else {
+                currentMarker = new google.maps.Marker({
+                    position: currentLocation,
+                    map: map,
+                    icon: {
+                        url: "http://maps.google.com/mapfiles/kml/shapes/cabs.png",
+                        scaledSize: new google.maps.Size(50, 50)
+                    }
+                });
+            }
+            map.setCenter(currentLocation);
+        }
+
+        function showError(error) {
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    alert("User denied the request for Geolocation.");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    alert("Location information is unavailable.");
+                    break;
+                case error.TIMEOUT:
+                    alert("The request to get user location timed out.");
+                    break;
+                case error.UNKNOWN_ERROR:
+                    alert("An unknown error occurred.");
+                    break;
+            }
+        }
+
+        function stopNavigation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.clearWatch(watchId);
+                if (currentMarker) {
+                    currentMarker.setMap(null);
+                    currentMarker = null;
+                }
+            }
+        }
+
+        // Auto-fill current location in "Origen" field
+        function autoFillLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const geocoder = new google.maps.Geocoder();
+
+                    const latlng = {
+                        lat: parseFloat(lat),
+                        lng: parseFloat(lng)
+                    };
+
+                    geocoder.geocode({'location': latlng}, function(results, status) {
+                        if (status === 'OK') {
+                            if (results[0]) {
+                                document.getElementById('origen').value = results[0].formatted_address;
+                            } else {
+                                window.alert('No results found');
+                            }
+                        } else {
+                            window.alert('Geocoder failed due to: ' + status);
+                        }
+                    });
+                }, function() {
+                    alert("Error: The Geolocation service failed.");
+                });
+            } else {
+                alert("Error: Your browser doesn't support geolocation.");
+            }
+        }
+
+        window.onload = autoFillLocation;
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCp-9uuzH1C7BVWpq09YDfrd89K_cGjL1Q&callback=initMap"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="text-center">
+            <h1>Calculadora de Rutas</h1>
+            <p class="lead">Ingrese los detalles para calcular la ruta óptima</p>
+        </div>
+        <div class="card p-4">
+            <form action="/ruta" method="post">
+                <div class="form-group">
+                    <label for="origen">Origen:</label>
+                    <input type="text" class="form-control" id="origen" name="origen" placeholder="Ingrese el punto de origen" required>
+                </div>
+                <div class="form-group">
+                    <label for="destino">Destino:</label>
+                    <input type="text" class="form-control" id="destino" name="destino" placeholder="Ingrese el punto de destino" required>
+                </div>
+                <div class="form-group">
+                    <label for="paradas">Paradas (separadas por comas):</label>
+                    <input type="text" class="form-control" id="paradas" name="paradas" placeholder="Ingrese las paradas intermedias">
+                </div>
+                <div class="text-center">
+                    <button type="submit" class="btn btn-primary-custom">Calcular Ruta</button>
+                </div>
+            </form>
+        </div>
+        <div class="text-center">
+            <h1>Resultado de la Ruta</h1>
+            <p class="lead">Aquí están los detalles de tu ruta</p>
+        </div>
+        <div class="card p-4">
+            <div class="card-body">
+                <h2>Detalles de la Ruta:</h2>
+                <p>Distancia Total (Google Maps): <strong>{{ distancia_total_gmaps }} km</strong></p>
+                <p>Consumo de Combustible Estimado (Google Maps): <strong>{{ consumo_combustible_gmaps }} litros</strong></p>
+                <p>Duración Estimada del Viaje: <strong>{{ duracion_total }}</strong></p>
+                <p>Hora Estimada de Llegada: <strong>{{ llegada_estimada }}</strong></p>
+            </div>
+        </div>
+        <div class="mt-3">
+            <h2>Mapa de la Ruta (Google Maps):</h2>
+            <div id="map"></div>
+        </div>
+        <div class="mt-3 text-center">
+            <button class="btn btn-primary-custom btn-custom" onclick="startNavigation()">Empezar Ruta</button>
+            <button class="btn btn-danger-custom btn-custom" onclick="stopNavigation()">Detener Ruta</button>
+        </div>
+        <div class="mt-3 text-center">
+            <a href="/" class="btn btn-danger-custom btn-custom">Volver</a>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
